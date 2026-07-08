@@ -1,0 +1,44 @@
+name: HAWhatsUp Baileys
+slug: hawhatsup_baileys
+description: WhatsApp Web bridge for Home Assistant sensors and MQTT messages
+version: 0.1.0
+url: https://github.com/local/HAWhatsUp/tree/main/hawhatsup-baileys
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: services
+boot: auto
+init: false
+ingress: true
+ingress_port: 3000
+panel_icon: mdi:whatsapp
+panel_title: HAWhatsUp
+ports:
+  3000/tcp: 3000
+ports_description:
+  3000/tcp: Status API and QR page
+options:
+  mqtt_host: core-mosquitto
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+  mqtt_client_id: hawhatsup-baileys
+  mqtt_base_topic: hawhatsup
+  discovery_prefix: homeassistant
+  web_port: 3000
+  device_name: HAWhatsUp
+  mark_online_on_connect: true
+  reject_call: true
+schema:
+  mqtt_host: str
+  mqtt_port: port
+  mqtt_username: str?
+  mqtt_password: password?
+  mqtt_client_id: str
+  mqtt_base_topic: str
+  discovery_prefix: str
+  web_port: port
+  device_name: str
+  mark_online_on_connect: bool
+  reject_call: bool
