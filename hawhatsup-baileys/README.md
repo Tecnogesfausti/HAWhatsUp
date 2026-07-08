@@ -16,6 +16,10 @@ Bridge de WhatsApp Web para Home Assistant usando Baileys.
 - `sensor.whatsapp_last_message`: ultimo texto recibido, con atributos `from`, `pushName`, `timestamp`, `messageType` y `body`.
 - `sensor.whatsapp_message_count`: contador de mensajes recibidos desde el arranque.
 
+Por defecto tambien publica mensajes propios (`include_own_messages: true`), util
+para probar escribiendote a ti mismo. El payload incluye `fromMe`, `direction` y
+`source`, que indica si llego por evento nuevo o por sincronizacion de historial.
+
 ## Topicos MQTT
 
 - `hawhatsup/status/state`
@@ -58,4 +62,3 @@ Si Mosquitto requiere usuario y clave, ponlos en las opciones del add-on.
 Baileys usa WhatsApp Web no oficial. Puede dejar de funcionar si WhatsApp cambia
 su protocolo, y debes respetar la privacidad de los mensajes y las condiciones
 del servicio aplicables.
-

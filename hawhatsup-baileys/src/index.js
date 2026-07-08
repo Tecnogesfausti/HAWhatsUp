@@ -29,6 +29,7 @@ const defaults = {
   discovery_prefix: process.env.DISCOVERY_PREFIX || 'homeassistant',
   web_port: Number(process.env.WEB_PORT || 3000),
   device_name: process.env.DEVICE_NAME || 'HAWhatsUp',
+  include_own_messages: true,
   mark_online_on_connect: true,
   reject_call: true
 };
@@ -154,6 +155,7 @@ async function startWhatsApp() {
   socket.ev.on('creds.update', saveCreds);
   socket.ev.on('connection.update', handleConnectionUpdate);
   socket.ev.on('messages.upsert', handleMessagesUpsert);
+  socket.ev.on('messaging-history.set', handleMessagingHistorySet);
 
   if (options.reject_call) {
     socket.ev.on('call', async (calls) => {
@@ -199,12 +201,22 @@ async function handleConnectionUpdate(update) {
 }
 
 function handleMessagesUpsert({ messages, type }) {
-  if (type !== 'notify') return;
+  logger.info({ type, count: messages.length }, 'WhatsApp messages upsert');
+  publishMessages(messages, type);
+}
 
+function handleMessagingHistorySet({ messages = [], syncType }) {
+  logger.info({ syncType, count: messages.length }, 'WhatsApp messaging history set');
+  publishMessages(messages, `history:${syncType || 'unknown'}`);
+}
+
+function publishMessages(messages, source) {
   for (const message of messages) {
-    if (!message.message || message.key.fromMe) continue;
+    if (!message.message) continue;
+    if (message.key.fromMe && !options.include_own_messages) continue;
 
     const normalized = normalizeMessage(message);
+    normalized.source = source;
     lastMessage = normalized;
     messageCount += 1;
 
@@ -225,6 +237,8 @@ function normalizeMessage(message) {
   return {
     id: message.key.id,
     from: message.key.remoteJid,
+    fromMe: Boolean(message.key.fromMe),
+    direction: message.key.fromMe ? 'outgoing' : 'incoming',
     pushName: message.pushName || '',
     timestamp: Number(message.messageTimestamp || Math.floor(Date.now() / 1000)),
     messageType,

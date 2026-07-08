@@ -28,6 +28,7 @@ options:
   discovery_prefix: homeassistant
   web_port: 3000
   device_name: HAWhatsUp
+  include_own_messages: true
   mark_online_on_connect: true
   reject_call: true
 schema:
@@ -40,5 +41,6 @@ schema:
   discovery_prefix: str
   web_port: port
   device_name: str
+  include_own_messages: bool
   mark_online_on_connect: bool
   reject_call: bool
