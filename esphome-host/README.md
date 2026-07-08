@@ -52,6 +52,9 @@ En esta maquina de pruebas:
 
 ## Entidades
 
+- `text.whatsapp_message`
+- `select.whatsapp_contact`
+- `button.send_whatsapp_message`
 - `text_sensor.whatsapp_status`
 - `text_sensor.whatsapp_last_message`
 - `text_sensor.whatsapp_last_from`
@@ -70,3 +73,28 @@ data:
   to: "34655068269"
   message: "hola desde ESPHome"
 ```
+
+Tambien puedes enviar desde las entidades del dispositivo:
+
+1. Escribe el texto en `text.whatsapp_message`.
+2. Elige contacto en `select.whatsapp_contact`.
+3. Pulsa `button.send_whatsapp_message`.
+
+## Actualizar contactos
+
+ESPHome necesita que las opciones de un `select` esten definidas en YAML. Para
+rellenarlas desde los contactos que recoge Baileys:
+
+```bash
+node ../tools/update-esphome-contacts.mjs hawhatsup_host.yaml
+```
+
+Si el add-on no esta en `http://127.0.0.1:3012`, define `HAWHATSUP_URL`:
+
+```bash
+HAWHATSUP_URL=http://192.168.1.136:3012 \
+  node ../tools/update-esphome-contacts.mjs hawhatsup_host.yaml
+```
+
+Despues vuelve a ejecutar ESPHome para que Home Assistant vea el desplegable
+actualizado.

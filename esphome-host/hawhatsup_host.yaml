@@ -13,6 +13,17 @@ host:
 logger:
   level: INFO
 
+globals:
+  - id: selected_whatsapp_contact
+    type: std::string
+    restore_value: true
+    initial_value: '""'
+
+  - id: outgoing_whatsapp_message
+    type: std::string
+    restore_value: true
+    initial_value: '""'
+
 api:
   reboot_timeout: 0s
   actions:
@@ -93,10 +104,78 @@ script:
 
 button:
   - platform: template
+    name: Send WhatsApp Message
+    id: send_whatsapp_message_button
+    on_press:
+      - if:
+          condition:
+            lambda: |-
+              return !id(selected_whatsapp_contact).empty() &&
+                id(selected_whatsapp_contact).find('|') != std::string::npos &&
+                !id(outgoing_whatsapp_message).empty();
+          then:
+            - http_request.post:
+                url: ${addon_url}/send
+                request_headers:
+                  Content-Type: application/json
+                json: |-
+                  const std::string selected = id(selected_whatsapp_contact);
+                  const size_t separator = selected.rfind('|');
+                  std::string jid = selected.substr(separator + 1);
+                  jid.erase(0, jid.find_first_not_of(" \t"));
+                  jid.erase(jid.find_last_not_of(" \t") + 1);
+                  root["to"] = jid;
+                  root["message"] = id(outgoing_whatsapp_message);
+                on_response:
+                  then:
+                    - if:
+                        condition:
+                          lambda: return response->status_code == 200;
+                        then:
+                          - logger.log: "WhatsApp selected-contact send request accepted"
+                        else:
+                          - logger.log:
+                              level: WARN
+                              format: "WhatsApp selected-contact send failed: HTTP %d"
+                              args:
+                                - response->status_code
+          else:
+            - logger.log:
+                level: WARN
+                format: "WhatsApp contact/message not ready"
+
+  - platform: template
     name: Refresh WhatsApp Status
     id: refresh_whatsapp_status_button
     on_press:
       - script.execute: refresh_whatsapp_status
+
+text:
+  - platform: template
+    name: WhatsApp Message
+    id: whatsapp_message_input
+    optimistic: true
+    min_length: 0
+    max_length: 255
+    mode: text
+    set_action:
+      - lambda: |-
+          id(outgoing_whatsapp_message) = x;
+          id(whatsapp_message_input).publish_state(x);
+
+select:
+  - platform: template
+    name: WhatsApp Contact
+    id: whatsapp_contact_select
+    optimistic: true
+    options:
+      # BEGIN generated WhatsApp contacts
+        - "No contacts yet | "
+      # END generated WhatsApp contacts
+    set_action:
+      - lambda: |-
+          id(selected_whatsapp_contact) = x;
+          id(whatsapp_contact_select).publish_state(x);
 
 binary_sensor:
   - platform: template

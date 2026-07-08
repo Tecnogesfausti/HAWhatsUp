@@ -16,6 +16,7 @@ import makeWASocket, {
 const DATA_DIR = process.env.DATA_DIR || '/data';
 const OPTIONS_PATH = path.join(DATA_DIR, 'options.json');
 const AUTH_DIR = path.join(DATA_DIR, 'auth');
+const CONTACTS_PATH = path.join(DATA_DIR, 'contacts.json');
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -57,8 +58,10 @@ let connectionState = 'starting';
 let lastMessage = null;
 let messageCount = 0;
 let reconnectTimer = null;
+const contacts = new Map();
 
 fs.mkdirSync(AUTH_DIR, { recursive: true });
+loadContacts();
 
 const mqttClient = mqtt.connect({
   host: options.mqtt_host,
@@ -113,6 +116,10 @@ app.get('/status', (_req, res) => {
   res.json({ connectionState, hasQr: Boolean(qrText), lastMessage, messageCount });
 });
 
+app.get('/contacts', (_req, res) => {
+  res.json({ contacts: getContactList() });
+});
+
 app.get('/qr', (_req, res) => {
   if (!qrDataUrl) {
     res.status(404).json({ error: 'QR is not available. Restart pairing if needed.' });
@@ -156,6 +163,8 @@ async function startWhatsApp() {
   socket.ev.on('connection.update', handleConnectionUpdate);
   socket.ev.on('messages.upsert', handleMessagesUpsert);
   socket.ev.on('messaging-history.set', handleMessagingHistorySet);
+  socket.ev.on('contacts.upsert', handleContactsUpsert);
+  socket.ev.on('contacts.update', handleContactsUpdate);
 
   if (options.reject_call) {
     socket.ev.on('call', async (calls) => {
@@ -220,6 +229,12 @@ function publishMessages(messages, source) {
     lastMessage = normalized;
     messageCount += 1;
 
+    upsertContact({
+      id: normalized.from,
+      name: normalized.pushName,
+      notify: normalized.pushName
+    });
+
     publishJson(`${baseTopic}/messages`, normalized, false);
     publishJson(`${baseTopic}/last_message/attributes`, normalized, true);
     publishState(`${baseTopic}/last_message/state`, normalized.body || normalized.messageType || 'message', true);
@@ -227,6 +242,22 @@ function publishMessages(messages, source) {
 
     logger.info({ from: normalized.from, messageType: normalized.messageType }, 'WhatsApp message received');
   }
+}
+
+function handleContactsUpsert(items) {
+  for (const contact of items) {
+    upsertContact(contact);
+  }
+
+  logger.info({ count: contacts.size }, 'WhatsApp contacts upserted');
+}
+
+function handleContactsUpdate(items) {
+  for (const contact of items) {
+    upsertContact(contact);
+  }
+
+  logger.info({ count: contacts.size }, 'WhatsApp contacts updated');
 }
 
 function normalizeMessage(message) {
@@ -244,6 +275,67 @@ function normalizeMessage(message) {
     messageType,
     body
   };
+}
+
+function upsertContact(contact) {
+  if (!contact?.id || !isSendableJid(contact.id)) return;
+
+  const previous = contacts.get(contact.id) || {};
+  contacts.set(contact.id, normalizeContact({ ...previous, ...contact }));
+  saveContacts();
+}
+
+function normalizeContact(contact) {
+  const displayName = contact.name || contact.notify || contact.verifiedName || contact.id;
+  return {
+    id: contact.id,
+    name: displayName,
+    notify: contact.notify || '',
+    verifiedName: contact.verifiedName || '',
+    jid: contact.id,
+    phone: jidToPhone(contact.id),
+    label: `${displayName} | ${contact.id}`
+  };
+}
+
+function getContactList() {
+  return Array.from(contacts.values())
+    .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+}
+
+function loadContacts() {
+  try {
+    if (!fs.existsSync(CONTACTS_PATH)) return;
+
+    const stored = JSON.parse(fs.readFileSync(CONTACTS_PATH, 'utf8'));
+    const items = Array.isArray(stored.contacts) ? stored.contacts : [];
+    for (const contact of items) {
+      if (contact?.id) {
+        contacts.set(contact.id, normalizeContact(contact));
+      }
+    }
+
+    logger.info({ count: contacts.size }, 'Loaded persisted WhatsApp contacts');
+  } catch (error) {
+    logger.warn({ error }, 'Could not load persisted WhatsApp contacts');
+  }
+}
+
+function saveContacts() {
+  try {
+    fs.writeFileSync(CONTACTS_PATH, JSON.stringify({ contacts: getContactList() }, null, 2));
+  } catch (error) {
+    logger.warn({ error }, 'Could not persist WhatsApp contacts');
+  }
+}
+
+function isSendableJid(jid) {
+  return String(jid).endsWith('@s.whatsapp.net') || String(jid).endsWith('@lid');
+}
+
+function jidToPhone(jid) {
+  const user = String(jid).split('@')[0] || '';
+  return /^\d+$/.test(user) ? user : '';
 }
 
 function unwrapMessage(message) {
@@ -271,6 +363,7 @@ async function sendWhatsAppMessage(to, message) {
 
   const jid = normalizeJid(to);
   await socket.sendMessage(jid, { text: String(message) });
+  upsertContact({ id: jid, name: jidToPhone(jid) || jid });
   publishJson(`${baseTopic}/sent`, { to: jid, message: String(message), timestamp: Date.now() }, false);
 }
 

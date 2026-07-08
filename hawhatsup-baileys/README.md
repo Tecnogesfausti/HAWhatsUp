@@ -39,6 +39,7 @@ Para enviar un mensaje por MQTT:
 
 - `GET /`: pagina de estado y QR.
 - `GET /status`: estado JSON.
+- `GET /contacts`: contactos conocidos por Baileys para generar desplegables.
 - `GET /qr`: QR JSON con `dataUrl`.
 - `POST /send`: envia mensaje.
 
