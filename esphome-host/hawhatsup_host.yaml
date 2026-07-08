@@ -1,0 +1,137 @@
+substitutions:
+  node_name: hawhatsup-host
+  friendly_name: HAWhatsUp Host
+  addon_url: http://127.0.0.1:3012
+
+esphome:
+  name: ${node_name}
+  friendly_name: ${friendly_name}
+
+host:
+  mac_address: "06:35:69:ab:f6:79"
+
+logger:
+  level: INFO
+
+api:
+  reboot_timeout: 0s
+  actions:
+    - action: send_whatsapp_message
+      variables:
+        to: string
+        message: string
+      then:
+        - http_request.post:
+            url: ${addon_url}/send
+            request_headers:
+              Content-Type: application/json
+            json: |-
+              root["to"] = to;
+              root["message"] = message;
+            on_response:
+              then:
+                - if:
+                    condition:
+                      lambda: return response->status_code == 200;
+                    then:
+                      - logger.log: "WhatsApp send request accepted"
+                    else:
+                      - logger.log:
+                          level: WARN
+                          format: "WhatsApp send request failed: HTTP %d"
+                          args:
+                            - response->status_code
+
+http_request:
+  timeout: 5s
+  verify_ssl: false
+
+json:
+
+interval:
+  - interval: 5s
+    then:
+      - script.execute: refresh_whatsapp_status
+
+script:
+  - id: refresh_whatsapp_status
+    mode: restart
+    then:
+      - http_request.get:
+          url: ${addon_url}/status
+          capture_response: true
+          on_response:
+            then:
+              - if:
+                  condition:
+                    lambda: return response->status_code == 200;
+                  then:
+                    - lambda: |-
+                        json::parse_json(body, [](JsonObject root) -> bool {
+                          const char *state = root["connectionState"] | "unknown";
+                          ESP_LOGI("hawhatsup", "Polled WhatsApp status: %s", state);
+                          id(whatsapp_status).publish_state(state);
+                          id(whatsapp_connected).publish_state(strcmp(state, "connected") == 0);
+
+                          if (root["messageCount"].is<int>()) {
+                            id(whatsapp_message_count).publish_state(root["messageCount"].as<int>());
+                          }
+
+                          if (root["lastMessage"].is<JsonObject>()) {
+                            JsonObject last = root["lastMessage"];
+                            id(whatsapp_last_message).publish_state(last["body"] | "");
+                            id(whatsapp_last_from).publish_state(last["from"] | "");
+                            id(whatsapp_last_direction).publish_state(last["direction"] | "");
+                          }
+
+                          return true;
+                        });
+                  else:
+                    - lambda: |-
+                        id(whatsapp_status).publish_state("http_error");
+                        id(whatsapp_connected).publish_state(false);
+
+button:
+  - platform: template
+    name: Refresh WhatsApp Status
+    id: refresh_whatsapp_status_button
+    on_press:
+      - script.execute: refresh_whatsapp_status
+
+binary_sensor:
+  - platform: template
+    name: WhatsApp Connected
+    id: whatsapp_connected
+
+sensor:
+  - platform: template
+    name: WhatsApp Message Count
+    id: whatsapp_message_count
+    accuracy_decimals: 0
+    update_interval: never
+    icon: mdi:counter
+
+text_sensor:
+  - platform: template
+    name: WhatsApp Status
+    id: whatsapp_status
+    update_interval: never
+    icon: mdi:whatsapp
+
+  - platform: template
+    name: WhatsApp Last Message
+    id: whatsapp_last_message
+    update_interval: never
+    icon: mdi:message-text
+
+  - platform: template
+    name: WhatsApp Last From
+    id: whatsapp_last_from
+    update_interval: never
+    icon: mdi:account
+
+  - platform: template
+    name: WhatsApp Last Direction
+    id: whatsapp_last_direction
+    update_interval: never
+    icon: mdi:swap-horizontal
